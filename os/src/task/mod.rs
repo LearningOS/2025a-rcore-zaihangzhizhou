@@ -11,6 +11,7 @@
 
 mod context;
 mod switch;
+mod trace;
 #[allow(clippy::module_inception)]
 mod task;
 
@@ -22,6 +23,7 @@ use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
+pub use trace::TraceContext;
 
 /// The task manager, where all the tasks are managed.
 ///
@@ -45,6 +47,8 @@ pub struct TaskManagerInner {
     tasks: [TaskControlBlock; MAX_APP_NUM],
     /// id of current `Running` task
     current_task: usize,
+    /// trace list
+    traces: [TraceContext;MAX_APP_NUM],
 }
 
 lazy_static! {
@@ -59,12 +63,14 @@ lazy_static! {
             task.task_cx = TaskContext::goto_restore(init_app_cx(i));
             task.task_status = TaskStatus::Ready;
         }
+        let traces=[TraceContext::init();MAX_APP_NUM];
         TaskManager {
             num_app,
             inner: unsafe {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    traces,
                 })
             },
         }
@@ -135,6 +141,21 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    fn on_syscall_occur(&self,syscall_id:usize){
+        let mut inner=self.inner.exclusive_access();
+        let cur_task=inner.current_task;
+        let mut trace=inner.traces[cur_task];
+        trace.trace_syscall(syscall_id);
+        inner.traces[cur_task]=trace;
+    }
+
+    fn get_syscall_count(&self,syscall_id:usize)->usize{
+        let inner=self.inner.exclusive_access();
+        let cur_task=inner.current_task;
+        let trace=inner.traces[cur_task];
+        trace.get_count(syscall_id)
+    }
 }
 
 /// Run the first task in task list.
@@ -168,4 +189,14 @@ pub fn suspend_current_and_run_next() {
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
+}
+
+/// Update the syscall count when syscall occur
+pub fn syscall_occur(syscall_id:usize){
+    TASK_MANAGER.on_syscall_occur(syscall_id);
+}
+
+/// get the syscall count when syscall trace
+pub fn syscall_count(syscall_id:usize)->usize{
+    TASK_MANAGER.get_syscall_count(syscall_id)
 }
