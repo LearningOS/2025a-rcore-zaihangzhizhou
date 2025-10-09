@@ -11,10 +11,14 @@
 
 mod context;
 mod switch;
+mod trace;
 #[allow(clippy::module_inception)]
 mod task;
 
+use core::usize;
+
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, PageTableEntry, VPNRange, VirtAddr, VirtPageNum};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
@@ -23,7 +27,7 @@ use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
-
+pub use trace::TraceContext;
 /// The task manager, where all the tasks are managed.
 ///
 /// Functions implemented on `TaskManager` deals with all task state transitions
@@ -46,6 +50,7 @@ struct TaskManagerInner {
     tasks: Vec<TaskControlBlock>,
     /// id of current `Running` task
     current_task: usize,
+    traces:Vec<TraceContext>,
 }
 
 lazy_static! {
@@ -55,15 +60,19 @@ lazy_static! {
         let num_app = get_num_app();
         println!("num_app = {}", num_app);
         let mut tasks: Vec<TaskControlBlock> = Vec::new();
+        let mut traces:Vec<TraceContext>=Vec::new();
         for i in 0..num_app {
             tasks.push(TaskControlBlock::new(get_app_data(i), i));
+            traces.push(TraceContext::new())
         }
+
         TaskManager {
             num_app,
             inner: unsafe {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    traces,
                 })
             },
         }
@@ -153,6 +162,38 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    fn on_syscall_occur(&self,syscall_id:usize){
+        let mut inner=self.inner.exclusive_access();
+        let current=inner.current_task;
+        inner.traces[current].trace_syscall(syscall_id);
+    }
+
+    fn get_syscall_count(&self,syscall_id:usize)->usize{
+        let inner=self.inner.exclusive_access();
+        let current=inner.current_task;
+        inner.traces[current].get_count(syscall_id)
+    }
+
+    fn get_translated_pte(&self,vpn:VirtPageNum)->Option<PageTableEntry>{
+        let inner=self.inner.exclusive_access();
+        let current=inner.current_task;
+        inner.tasks[current].memory_set.translate(vpn)
+    }
+
+    fn create_new_map_area(&self,start_va:VirtAddr,end_va:VirtAddr,permission:MapPermission){
+        let mut inner=self.inner.exclusive_access();
+        let current=inner.current_task;
+        inner.tasks[current].memory_set.insert_framed_area(start_va, end_va, permission);
+    }
+
+    fn unmap_vpn_range(&self,vpn_range:VPNRange){
+        let mut inner=self.inner.exclusive_access();
+        let current=inner.current_task;
+        for vpn in vpn_range{
+            inner.tasks[current].memory_set.unmap(vpn);
+        }
+    }
 }
 
 /// Run the first task in task list.
@@ -201,4 +242,29 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+/// 更新系统调用次数
+pub fn syscall_occur(syscall_id:usize){
+    TASK_MANAGER.on_syscall_occur(syscall_id);
+}
+
+/// 获取系统调用次数
+pub fn syscall_count(syscall_id:usize)->usize{
+    TASK_MANAGER.get_syscall_count(syscall_id)
+}
+
+/// 获取vpn对应的pte
+pub fn translated_pte(vpn:VirtPageNum)->Option<PageTableEntry>{
+    TASK_MANAGER.get_translated_pte(vpn)
+}
+
+/// 创建一个逻辑段
+pub fn create_map_area(start_va:VirtAddr,end_va:VirtAddr,permission:MapPermission){
+    TASK_MANAGER.create_new_map_area(start_va, end_va, permission);
+}
+
+/// 取消虚拟页到物理页的映射
+pub fn unmap_vpn_range(vpn_range:VPNRange){
+    TASK_MANAGER.unmap_vpn_range(vpn_range);
 }

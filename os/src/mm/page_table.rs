@@ -1,6 +1,6 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
-use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
+use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum, PhysAddr};
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
@@ -178,4 +178,47 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
         start = end_va.into();
     }
     v
+}
+
+/// 读取id地址处一个字节的数据
+pub fn read_one_byte(token:usize,id:usize)->Option<u8>{
+    if id>=(1<<39){
+        return None;
+    }
+    let page_table = PageTable::from_token(token);
+    let va=VirtAddr::from(id);
+    if let Some(pte)=page_table.translate(va.floor()){
+        if !pte.readable(){
+            return None;
+        }
+        let ppn=pte.ppn();
+        let pa=PhysAddr::from(ppn).0|va.page_offset();
+        unsafe{
+            Some((pa as *const u8).read())
+        }
+    }else{
+        return None;
+    }
+}
+
+/// 写入一个字节的数据到id处
+pub fn write_one_byte(token:usize,id:usize,data:usize)->isize{
+    if id>=(1<<39){
+        return -1;
+    }
+    let page_table = PageTable::from_token(token);
+    let va=VirtAddr::from(id);
+    if let Some(pte)=page_table.translate(va.floor()){
+        if !pte.writable(){
+            return -1;
+        }    
+        let ppn =pte.ppn();
+        let pa=PhysAddr::from(ppn).0|va.page_offset();
+        unsafe{
+            ((pa as *mut u8).write(data as u8));
+        }
+        0
+    }else{
+        -1
+    }
 }
