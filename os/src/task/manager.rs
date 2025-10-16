@@ -1,4 +1,6 @@
 //!Implementation of [`TaskManager`]
+use core::usize;
+
 use super::TaskControlBlock;
 use crate::sync::UPSafeCell;
 use alloc::collections::VecDeque;
@@ -23,7 +25,16 @@ impl TaskManager {
     }
     /// Take a process out of the ready queue
     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
-        self.ready_queue.pop_front()
+        let mut min_index=0;
+        let mut min_stride=usize::MAX;
+        for i in 0..self.ready_queue.len(){
+            let stride=self.ready_queue[i].inner_exclusive_access().stride;
+            if stride<min_stride{
+                min_stride=stride;
+                min_index=i;
+            }
+        }
+        self.ready_queue.remove(min_index)
     }
 }
 
