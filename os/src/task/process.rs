@@ -49,6 +49,20 @@ pub struct ProcessControlBlockInner {
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// enable_deadlock_detect
+    pub enable_deadlock_detect:bool,
+    /// mutex_available
+    pub mutex_available:Vec<usize>,
+    /// mutex_allocation
+    pub mutex_allocation:Vec<Vec<usize>>,
+    /// mutex_need
+    pub mutex_need:Vec<Vec<usize>>,
+    /// semaphore_available
+    pub semaphore_available:Vec<usize>,
+    /// semaphore_allocation
+    pub semaphore_allocation:Vec<Vec<usize>>,
+    /// semaphore_need
+    pub semaphore_need:Vec<Vec<usize>>,
 }
 
 impl ProcessControlBlockInner {
@@ -119,6 +133,13 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    enable_deadlock_detect:false,
+                    mutex_available:Vec::new(),
+                    mutex_allocation:vec![vec![]],
+                    mutex_need:vec![vec![]],
+                    semaphore_available:Vec::new(),
+                    semaphore_allocation:vec![vec![]],
+                    semaphore_need:vec![vec![]],
                 })
             },
         });
@@ -245,6 +266,13 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    enable_deadlock_detect:false,
+                    mutex_available:Vec::new(),
+                    mutex_allocation:vec![vec![0]],
+                    mutex_need:vec![vec![0]],
+                    semaphore_available:Vec::new(),
+                    semaphore_allocation:vec![vec![0]],
+                    semaphore_need:vec![vec![0]],
                 })
             },
         });
